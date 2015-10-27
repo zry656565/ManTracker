@@ -4,41 +4,27 @@
 // </copyright>
 //------------------------------------------------------------------------------
 
-namespace Microsoft.Samples.Kinect.BodyIndexBasics
+namespace Microsoft.Samples.Kinect.CoordinateMappingBasics
 {
     using System;
     using System.ComponentModel;
     using System.Diagnostics;
     using System.Globalization;
     using System.IO;
-    using System.Runtime.InteropServices;
     using System.Windows;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
     using Microsoft.Kinect;
 
     /// <summary>
-    /// Interaction logic for the MainWindow
+    /// Interaction logic for MainWindow
     /// </summary>
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
         /// <summary>
         /// Size of the RGB pixel in the bitmap
         /// </summary>
-        private const int BytesPerPixel = 4;
-
-        /// <summary>
-        /// Collection of colors to be used to display the BodyIndexFrame data.
-        /// </summary>
-        private static readonly uint[] BodyColor =
-        {
-            0x0000FF00,
-            0x00FF0000,
-            0xFFFF4000,
-            0x40FFFF00,
-            0xFF40FF00,
-            0xFF808000,
-        };
+        private readonly int bytesPerPixel = (PixelFormats.Bgr32.BitsPerPixel + 7) / 8;
 
         /// <summary>
         /// Active Kinect sensor
@@ -46,24 +32,29 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         private KinectSensor kinectSensor = null;
 
         /// <summary>
-        /// Reader for body index frames
+        /// Coordinate mapper to map one type of point to another
         /// </summary>
-        private BodyIndexFrameReader bodyIndexFrameReader = null;
+        private CoordinateMapper coordinateMapper = null;
 
         /// <summary>
-        /// Description of the data contained in the body index frame
+        /// Reader for depth/color/body index frames
         /// </summary>
-        private FrameDescription bodyIndexFrameDescription = null;
+        private MultiSourceFrameReader multiFrameSourceReader = null;
 
         /// <summary>
         /// Bitmap to display
         /// </summary>
-        private WriteableBitmap bodyIndexBitmap = null;
+        private WriteableBitmap bitmap = null;
 
         /// <summary>
-        /// Intermediate storage for frame data converted to color
+        /// The size in bytes of the bitmap back buffer
         /// </summary>
-        private uint[] bodyIndexPixels = null;
+        private uint bitmapBackBufferSize = 0;
+
+        /// <summary>
+        /// Intermediate storage for the color to depth mapping
+        /// </summary>
+        private DepthSpacePoint[] colorMappedToDepthPoints = null;
 
         /// <summary>
         /// Current status text to display
@@ -75,37 +66,40 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         /// </summary>
         public MainWindow()
         {
-            // get the kinectSensor object
             this.kinectSensor = KinectSensor.GetDefault();
 
-            // open the reader for the depth frames
-            this.bodyIndexFrameReader = this.kinectSensor.BodyIndexFrameSource.OpenReader();
+            this.multiFrameSourceReader = this.kinectSensor.OpenMultiSourceFrameReader(FrameSourceTypes.Depth | FrameSourceTypes.Color | FrameSourceTypes.BodyIndex);
 
-            // wire handler for frame arrival
-            this.bodyIndexFrameReader.FrameArrived += this.Reader_FrameArrived;
+            this.multiFrameSourceReader.MultiSourceFrameArrived += this.Reader_MultiSourceFrameArrived;
 
-            this.bodyIndexFrameDescription = this.kinectSensor.BodyIndexFrameSource.FrameDescription;
+            this.coordinateMapper = this.kinectSensor.CoordinateMapper;
 
-            // allocate space to put the pixels being converted
-            this.bodyIndexPixels = new uint[this.bodyIndexFrameDescription.Width * this.bodyIndexFrameDescription.Height];
+            FrameDescription depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
 
-            // create the bitmap to display
-            this.bodyIndexBitmap = new WriteableBitmap(this.bodyIndexFrameDescription.Width, this.bodyIndexFrameDescription.Height, 96.0, 96.0, PixelFormats.Bgr32, null);
+            int depthWidth = depthFrameDescription.Width;
+            int depthHeight = depthFrameDescription.Height;
 
-            // set IsAvailableChanged event notifier
+            FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
+
+            int colorWidth = colorFrameDescription.Width;
+            int colorHeight = colorFrameDescription.Height;
+
+            this.colorMappedToDepthPoints = new DepthSpacePoint[colorWidth * colorHeight];
+
+            this.bitmap = new WriteableBitmap(colorWidth, colorHeight, 96.0, 96.0, PixelFormats.Bgra32, null);
+            
+            // Calculate the WriteableBitmap back buffer size
+            this.bitmapBackBufferSize = (uint)((this.bitmap.BackBufferStride * (this.bitmap.PixelHeight - 1)) + (this.bitmap.PixelWidth * this.bytesPerPixel));
+                                   
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged;
 
-            // open the sensor
             this.kinectSensor.Open();
 
-            // set the status text
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.NoSensorStatusText;
 
-            // use the window object as the view model in this simple example
             this.DataContext = this;
 
-            // initialize the components (controls) of the window
             this.InitializeComponent();
         }
 
@@ -121,7 +115,7 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         {
             get
             {
-                return this.bodyIndexBitmap;
+                return this.bitmap;
             }
         }
 
@@ -141,7 +135,6 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
                 {
                     this.statusText = value;
 
-                    // notify any bound elements that the text has changed
                     if (this.PropertyChanged != null)
                     {
                         this.PropertyChanged(this, new PropertyChangedEventArgs("StatusText"));
@@ -155,16 +148,13 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         /// </summary>
         /// <param name="sender">object sending the event</param>
         /// <param name="e">event arguments</param>
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
-            if (this.bodyIndexFrameReader != null)
+            if (this.multiFrameSourceReader != null)
             {
-                // remove the event handler
-                this.bodyIndexFrameReader.FrameArrived -= this.Reader_FrameArrived;
-
-                // BodyIndexFrameReder is IDisposable
-                this.bodyIndexFrameReader.Dispose();
-                this.bodyIndexFrameReader = null;
+                // MultiSourceFrameReder is IDisposable
+                this.multiFrameSourceReader.Dispose();
+                this.multiFrameSourceReader = null;
             }
 
             if (this.kinectSensor != null)
@@ -181,114 +171,184 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         /// <param name="e">event arguments</param>
         private void ScreenshotButton_Click(object sender, RoutedEventArgs e)
         {
-            if (this.bodyIndexBitmap != null)
+            // Create a render target to which we'll render our composite image
+            RenderTargetBitmap renderBitmap = new RenderTargetBitmap((int)CompositeImage.ActualWidth, (int)CompositeImage.ActualHeight, 96.0, 96.0, PixelFormats.Pbgra32);
+
+            DrawingVisual dv = new DrawingVisual();
+            using (DrawingContext dc = dv.RenderOpen())
             {
-                // create a png bitmap encoder which knows how to save a .png file
-                BitmapEncoder encoder = new PngBitmapEncoder();
+                VisualBrush brush = new VisualBrush(CompositeImage);
+                dc.DrawRectangle(brush, null, new Rect(new Point(), new Size(CompositeImage.ActualWidth, CompositeImage.ActualHeight)));
+            }
 
-                // create frame from the writable bitmap and add to encoder
-                encoder.Frames.Add(BitmapFrame.Create(this.bodyIndexBitmap));
+            renderBitmap.Render(dv);
 
-                string time = System.DateTime.UtcNow.ToString("hh'-'mm'-'ss", CultureInfo.CurrentUICulture.DateTimeFormat);
+            BitmapEncoder encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(renderBitmap));
 
-                string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            string time = System.DateTime.Now.ToString("hh'-'mm'-'ss", CultureInfo.CurrentUICulture.DateTimeFormat);
 
-                string path = Path.Combine(myPhotos, "KinectScreenshot-BodyIndex-" + time + ".png");
+            string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
 
-                // write the new file to disk
-                try
+            string path = Path.Combine(myPhotos, "KinectScreenshot-CoordinateMapping-" + time + ".png");
+
+            // Write the new file to disk
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Create))
                 {
-                    // FileStream is IDisposable
-                    using (FileStream fs = new FileStream(path, FileMode.Create))
-                    {
-                        encoder.Save(fs);
-                    }
+                    encoder.Save(fs);
+                }
 
-                    this.StatusText = string.Format(CultureInfo.CurrentCulture, Properties.Resources.SavedScreenshotStatusTextFormat, path);
-                }
-                catch (IOException)
-                {
-                    this.StatusText = string.Format(CultureInfo.CurrentCulture, Properties.Resources.FailedScreenshotStatusTextFormat, path);
-                }
+                this.StatusText = string.Format(Properties.Resources.SavedScreenshotStatusTextFormat, path);
+            }
+            catch (IOException)
+            {
+                this.StatusText = string.Format(Properties.Resources.FailedScreenshotStatusTextFormat, path);
             }
         }
 
         /// <summary>
-        /// Handles the body index frame data arriving from the sensor
+        /// Handles the depth/color/body index frame data arriving from the sensor
         /// </summary>
         /// <param name="sender">object sending the event</param>
         /// <param name="e">event arguments</param>
-        private void Reader_FrameArrived(object sender, BodyIndexFrameArrivedEventArgs e)
+        private void Reader_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
-            bool bodyIndexFrameProcessed = false;
+            int depthWidth = 0;
+            int depthHeight = 0;
+                    
+            DepthFrame depthFrame = null;
+            ColorFrame colorFrame = null;
+            BodyIndexFrame bodyIndexFrame = null;
+            bool isBitmapLocked = false;
 
-            using (BodyIndexFrame bodyIndexFrame = e.FrameReference.AcquireFrame())
+            MultiSourceFrame multiSourceFrame = e.FrameReference.AcquireFrame();           
+
+            // If the Frame has expired by the time we process this event, return.
+            if (multiSourceFrame == null)
             {
-                if (bodyIndexFrame != null)
+                return;
+            }
+
+            // We use a try/finally to ensure that we clean up before we exit the function.  
+            // This includes calling Dispose on any Frame objects that we may have and unlocking the bitmap back buffer.
+            try
+            {                
+                depthFrame = multiSourceFrame.DepthFrameReference.AcquireFrame();
+                colorFrame = multiSourceFrame.ColorFrameReference.AcquireFrame();
+                bodyIndexFrame = multiSourceFrame.BodyIndexFrameReference.AcquireFrame();
+
+                // If any frame has expired by the time we process this event, return.
+                // The "finally" statement will Dispose any that are not null.
+                if ((depthFrame == null) || (colorFrame == null) || (bodyIndexFrame == null))
                 {
-                    // the fastest way to process the body index data is to directly access 
-                    // the underlying buffer
-                    using (Microsoft.Kinect.KinectBuffer bodyIndexBuffer = bodyIndexFrame.LockImageBuffer())
+                    return;
+                }
+
+                // Process Depth
+                FrameDescription depthFrameDescription = depthFrame.FrameDescription;
+
+                depthWidth = depthFrameDescription.Width;
+                depthHeight = depthFrameDescription.Height;
+
+                // Access the depth frame data directly via LockImageBuffer to avoid making a copy
+                using (KinectBuffer depthFrameData = depthFrame.LockImageBuffer())
+                {
+                    this.coordinateMapper.MapColorFrameToDepthSpaceUsingIntPtr(
+                        depthFrameData.UnderlyingBuffer,
+                        depthFrameData.Size,
+                        this.colorMappedToDepthPoints);
+                }
+
+                // We're done with the DepthFrame 
+                depthFrame.Dispose();
+                depthFrame = null;
+
+                // Process Color
+
+                // Lock the bitmap for writing
+                this.bitmap.Lock();
+                isBitmapLocked = true;
+
+                colorFrame.CopyConvertedFrameDataToIntPtr(this.bitmap.BackBuffer, this.bitmapBackBufferSize, ColorImageFormat.Bgra);
+
+                // We're done with the ColorFrame 
+                colorFrame.Dispose();
+                colorFrame = null;
+
+                // We'll access the body index data directly to avoid a copy
+                using (KinectBuffer bodyIndexData = bodyIndexFrame.LockImageBuffer())
+                {
+                    unsafe
                     {
-                        // verify data and write the color data to the display bitmap
-                        if (((this.bodyIndexFrameDescription.Width * this.bodyIndexFrameDescription.Height) == bodyIndexBuffer.Size) &&
-                            (this.bodyIndexFrameDescription.Width == this.bodyIndexBitmap.PixelWidth) && (this.bodyIndexFrameDescription.Height == this.bodyIndexBitmap.PixelHeight))
+                        byte* bodyIndexDataPointer = (byte*)bodyIndexData.UnderlyingBuffer;
+
+                        int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
+
+                        fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
                         {
-                            this.ProcessBodyIndexFrameData(bodyIndexBuffer.UnderlyingBuffer, bodyIndexBuffer.Size);
-                            bodyIndexFrameProcessed = true;
+                            // Treat the color data as 4-byte pixels
+                            uint* bitmapPixelsPointer = (uint*)this.bitmap.BackBuffer;
+
+                            // Loop over each row and column of the color image
+                            // Zero out any pixels that don't correspond to a body index
+                            for (int colorIndex = 0; colorIndex < colorMappedToDepthPointCount; ++colorIndex)
+                            {
+                                float colorMappedToDepthX = colorMappedToDepthPointsPointer[colorIndex].X;
+                                float colorMappedToDepthY = colorMappedToDepthPointsPointer[colorIndex].Y;
+
+                                // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
+                                if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
+                                    !float.IsNegativeInfinity(colorMappedToDepthY))
+                                {
+                                    // Make sure the depth pixel maps to a valid point in color space
+                                    int depthX = (int)(colorMappedToDepthX + 0.5f);
+                                    int depthY = (int)(colorMappedToDepthY + 0.5f);
+
+                                    // If the point is not valid, there is no body index there.
+                                    if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
+                                    {
+                                        int depthIndex = (depthY * depthWidth) + depthX;
+
+                                        // If we are tracking a body for the current pixel, do not zero out the pixel
+                                        if (bodyIndexDataPointer[depthIndex] != 0xff)
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                bitmapPixelsPointer[colorIndex] = 0;
+                            }
                         }
+
+                        this.bitmap.AddDirtyRect(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight));
                     }
                 }
             }
-
-            if (bodyIndexFrameProcessed)
+            finally
             {
-                this.RenderBodyIndexPixels();
-            }
-        }
-
-        /// <summary>
-        /// Directly accesses the underlying image buffer of the BodyIndexFrame to 
-        /// create a displayable bitmap.
-        /// This function requires the /unsafe compiler option as we make use of direct
-        /// access to the native memory pointed to by the bodyIndexFrameData pointer.
-        /// </summary>
-        /// <param name="bodyIndexFrameData">Pointer to the BodyIndexFrame image data</param>
-        /// <param name="bodyIndexFrameDataSize">Size of the BodyIndexFrame image data</param>
-        private unsafe void ProcessBodyIndexFrameData(IntPtr bodyIndexFrameData, uint bodyIndexFrameDataSize)
-        {
-            byte* frameData = (byte*)bodyIndexFrameData;
-
-            // convert body index to a visual representation
-            for (int i = 0; i < (int)bodyIndexFrameDataSize; ++i)
-            {
-                // the BodyColor array has been sized to match
-                // BodyFrameSource.BodyCount
-                if (frameData[i] < BodyColor.Length)
+                if (isBitmapLocked)
                 {
-                    // this pixel is part of a player,
-                    // display the appropriate color
-                    this.bodyIndexPixels[i] = BodyColor[frameData[i]];
+                    this.bitmap.Unlock();
                 }
-                else
+
+                if (depthFrame != null)
                 {
-                    // this pixel is not part of a player
-                    // display black
-                    this.bodyIndexPixels[i] = 0x00000000;
+                    depthFrame.Dispose();
+                }
+
+                if (colorFrame != null)
+                {
+                    colorFrame.Dispose();
+                }
+
+                if (bodyIndexFrame != null)
+                {
+                    bodyIndexFrame.Dispose();
                 }
             }
-        }
-
-        /// <summary>
-        /// Renders color pixels into the writeableBitmap.
-        /// </summary>
-        private void RenderBodyIndexPixels()
-        {
-            this.bodyIndexBitmap.WritePixels(
-                new Int32Rect(0, 0, this.bodyIndexBitmap.PixelWidth, this.bodyIndexBitmap.PixelHeight),
-                this.bodyIndexPixels,
-                this.bodyIndexBitmap.PixelWidth * (int)BytesPerPixel,
-                0);
         }
 
         /// <summary>
@@ -298,7 +358,6 @@ namespace Microsoft.Samples.Kinect.BodyIndexBasics
         /// <param name="e">event arguments</param>
         private void Sensor_IsAvailableChanged(object sender, IsAvailableChangedEventArgs e)
         {
-            // on failure, set the status text
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.SensorNotAvailableStatusText;
         }

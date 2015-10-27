@@ -4,13 +4,13 @@
 // </copyright>
 //------------------------------------------------------------------------------
 
-namespace Microsoft.Samples.Kinect.BodyIndexBasics
+namespace Microsoft.Samples.Kinect.CoordinateMappingBasics
 {
     using System;
     using System.Windows;
 
     /// <summary>
-    /// Interaction logic the for App
+    /// Interaction logic for App
     /// </summary>
     public partial class App : Application
     {
