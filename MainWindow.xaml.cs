@@ -356,8 +356,13 @@
                                                             : Properties.Resources.SensorNotAvailableStatusText;
         }
 
-        private void DrawRect(WriteableBitmap bitmap, int top, int right, int bottom, int left, int stroke = 1)
+        private void DrawRect(WriteableBitmap bitmap, int top, int right, int bottom, int left, int stroke = 10)
         {
+            left = Math.Max(stroke, left);
+            top = Math.Max(stroke, top);
+            right = Math.Min(bitmap.PixelWidth - stroke, right);
+            bottom = Math.Min(bitmap.PixelHeight - stroke, bottom);
+
             bitmap.DrawLineAa(left, top, right, top, Colors.Blue, stroke);
             bitmap.DrawLineAa(right, top, right, bottom, Colors.Blue, stroke);
             bitmap.DrawLineAa(left, bottom, right, bottom, Colors.Blue, stroke);
