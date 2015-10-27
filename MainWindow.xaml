@@ -1,7 +1,7 @@
-﻿<Window x:Class="Microsoft.Samples.Kinect.CoordinateMappingBasics.MainWindow"
+﻿<Window x:Class="SJTU.IOTLab.ManTracking.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Coordinate Mapping Basics" 
+        Title="Man Tracking" 
         Height="600" Width="700" 
         Closing="MainWindow_Closing"> 
   <Window.Resources>
