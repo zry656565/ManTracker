@@ -5,6 +5,7 @@
     using System.Diagnostics;
     using System.Globalization;
     using System.IO;
+    using System.Collections;
     using System.Windows;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
@@ -46,6 +47,11 @@
         private uint bitmapBackBufferSize = 0;
 
         /// <summary>
+        /// Intermediate storage for the depth to color mapping
+        /// </summary>
+        private ColorSpacePoint[] depthMappedToColorPoints = null;
+
+        /// <summary>
         /// Intermediate storage for the color to depth mapping
         /// </summary>
         private DepthSpacePoint[] colorMappedToDepthPoints = null;
@@ -63,37 +69,31 @@
             this.kinectSensor = KinectSensor.GetDefault();
 
             this.multiFrameSourceReader = this.kinectSensor.OpenMultiSourceFrameReader(FrameSourceTypes.Depth | FrameSourceTypes.Color | FrameSourceTypes.BodyIndex);
-
             this.multiFrameSourceReader.MultiSourceFrameArrived += this.Reader_MultiSourceFrameArrived;
-
             this.coordinateMapper = this.kinectSensor.CoordinateMapper;
 
             FrameDescription depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
-
             int depthWidth = depthFrameDescription.Width;
             int depthHeight = depthFrameDescription.Height;
 
             FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
-
             int colorWidth = colorFrameDescription.Width;
             int colorHeight = colorFrameDescription.Height;
 
             this.colorMappedToDepthPoints = new DepthSpacePoint[colorWidth * colorHeight];
+            this.depthMappedToColorPoints = new ColorSpacePoint[depthWidth * depthHeight];
 
             this.bitmap = new WriteableBitmap(colorWidth, colorHeight, 96.0, 96.0, PixelFormats.Bgra32, null);
             
             // Calculate the WriteableBitmap back buffer size
             this.bitmapBackBufferSize = (uint)((this.bitmap.BackBufferStride * (this.bitmap.PixelHeight - 1)) + (this.bitmap.PixelWidth * this.bytesPerPixel));
-                                   
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged;
-
             this.kinectSensor.Open();
 
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.NoSensorStatusText;
 
             this.DataContext = this;
-
             this.InitializeComponent();
         }
 
@@ -159,50 +159,6 @@
         }
 
         /// <summary>
-        /// Handles the user clicking on the screenshot button
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
-        private void ScreenshotButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Create a render target to which we'll render our composite image
-            RenderTargetBitmap renderBitmap = new RenderTargetBitmap((int)CompositeImage.ActualWidth, (int)CompositeImage.ActualHeight, 96.0, 96.0, PixelFormats.Pbgra32);
-
-            DrawingVisual dv = new DrawingVisual();
-            using (DrawingContext dc = dv.RenderOpen())
-            {
-                VisualBrush brush = new VisualBrush(CompositeImage);
-                dc.DrawRectangle(brush, null, new Rect(new Point(), new Size(CompositeImage.ActualWidth, CompositeImage.ActualHeight)));
-            }
-
-            renderBitmap.Render(dv);
-
-            BitmapEncoder encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(renderBitmap));
-
-            string time = System.DateTime.Now.ToString("hh'-'mm'-'ss", CultureInfo.CurrentUICulture.DateTimeFormat);
-
-            string myPhotos = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-
-            string path = Path.Combine(myPhotos, "KinectScreenshot-CoordinateMapping-" + time + ".png");
-
-            // Write the new file to disk
-            try
-            {
-                using (FileStream fs = new FileStream(path, FileMode.Create))
-                {
-                    encoder.Save(fs);
-                }
-
-                this.StatusText = string.Format(Properties.Resources.SavedScreenshotStatusTextFormat, path);
-            }
-            catch (IOException)
-            {
-                this.StatusText = string.Format(Properties.Resources.FailedScreenshotStatusTextFormat, path);
-            }
-        }
-
-        /// <summary>
         /// Handles the depth/color/body index frame data arriving from the sensor
         /// </summary>
         /// <param name="sender">object sending the event</param>
@@ -211,6 +167,8 @@
         {
             int depthWidth = 0;
             int depthHeight = 0;
+            int colorWidth = 0;
+            int colorHeight = 0;
                     
             DepthFrame depthFrame = null;
             ColorFrame colorFrame = null;
@@ -240,6 +198,11 @@
                     return;
                 }
 
+                FrameDescription colorFrameDescription = colorFrame.FrameDescription;
+
+                colorWidth = colorFrameDescription.Width;
+                colorHeight = colorFrameDescription.Height;
+
                 // Process Depth
                 FrameDescription depthFrameDescription = depthFrame.FrameDescription;
 
@@ -253,6 +216,11 @@
                         depthFrameData.UnderlyingBuffer,
                         depthFrameData.Size,
                         this.colorMappedToDepthPoints);
+
+                    this.coordinateMapper.MapDepthFrameToColorSpaceUsingIntPtr(
+                        depthFrameData.UnderlyingBuffer,
+                        depthFrameData.Size,
+                        this.depthMappedToColorPoints);
                 }
 
                 // We're done with the DepthFrame 
@@ -276,7 +244,17 @@
                 {
                     unsafe
                     {
-                        byte* bodyIndexDataPointer = (byte*)bodyIndexData.UnderlyingBuffer;
+                        byte[] writableBodyIndexData = new byte[depthHeight * depthWidth];
+                        byte* unwritableBodyIndexData = (byte*)bodyIndexData.UnderlyingBuffer;
+
+                        Body[] bodys = new Body[10];
+                        int[,] buffer = new int[10,4]; // 10 bodys * 4 directions
+                        for (int i = 0; i < 10; ++i)
+                        {
+                            for (int j = 0; j < 4; ++j) {
+                                buffer[i,j] = 0;
+                            }
+                        }
 
                         int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
 
@@ -284,6 +262,24 @@
                         {
                             // Treat the color data as 4-byte pixels
                             uint* bitmapPixelsPointer = (uint*)this.bitmap.BackBuffer;
+
+                            byte[] pixels = new byte[9];
+
+                            for (int y = 1; y < depthHeight - 1; ++y)
+                            {
+                                for (int x = 1; x < depthWidth - 1; ++x)
+                                {
+                                    for (int j = 0; j < 3; ++j)
+                                    {
+                                        for (int i = 0; i < 3; ++i)
+                                        {
+                                            pixels[j * 3 + i] = unwritableBodyIndexData[(y - 1 + j) * depthWidth + (x - 1 + i)];
+                                        }
+                                    }
+                                    Array.Sort(pixels);
+                                    writableBodyIndexData[y * depthWidth + x] = pixels[5];
+                                }
+                            }
 
                             // Loop over each row and column of the color image
                             // Zero out any pixels that don't correspond to a body index
@@ -306,7 +302,7 @@
                                         int depthIndex = (depthY * depthWidth) + depthX;
 
                                         // If we are tracking a body for the current pixel, do not zero out the pixel
-                                        if (bodyIndexDataPointer[depthIndex] != 0xff)
+                                        if (writableBodyIndexData[depthIndex] != 0xff)
                                         {
                                             continue;
                                         }
@@ -315,6 +311,47 @@
 
                                 bitmapPixelsPointer[colorIndex] = 0;
                             }
+
+                        //    // Loop over each row and column of the color image
+                        //    for (int y = 0; y < colorHeight; ++y)
+                        //    {
+                        //        for (int x = 0; x < colorWidth; ++x)
+                        //        {
+                        //            float colorMappedToDepthX = colorMappedToDepthPointsPointer[ y * depthWidth + x ].X;
+                        //            float colorMappedToDepthY = colorMappedToDepthPointsPointer[ y * depthWidth + x ].Y;
+                                    
+                        //            // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
+                        //            if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
+                        //                !float.IsNegativeInfinity(colorMappedToDepthY))
+                        //            {
+                        //                // Make sure the depth pixel maps to a valid point in color space
+                        //                int depthX = (int)(colorMappedToDepthX + 0.5f);
+                        //                int depthY = (int)(colorMappedToDepthY + 0.5f);
+                                    
+                        //                // If the point is not valid, there is no body index there.
+                        //                if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
+                        //                {
+                        //                    int depthIndex = (depthY * depthWidth) + depthX;
+                                    
+                        //                    // If we are tracking a body for the current pixel, ...
+                        //                    int bodyIndex = writableBodyIndexData[depthIndex];
+                        //                    if (bodyIndex != 0xff)
+                        //                    {
+                        //                        buffer[bodyIndex, 0] += 1;
+                        //                        if (buffer[bodyIndex, 0] >= 10)
+                        //                        {
+                        //                            for (int i = 0; i < colorWidth; ++i)
+                        //                            {
+                        //                                bitmapPixelsPointer[y * colorWidth + i] = 0xffff0000; // a,r,g,b
+                        //                            }
+                        //                            buffer[bodyIndex, 0] = 0;
+                        //                            continue;
+                        //                        }
+                        //                    }
+                        //                }
+                        //            }
+                        //        }
+                        //    }
                         }
 
                         this.bitmap.AddDirtyRect(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight));
@@ -355,5 +392,13 @@
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.SensorNotAvailableStatusText;
         }
+    }
+
+    struct Body
+    {
+        uint x1;
+        uint x2;
+        uint y1;
+        uint y2;
     }
 }
