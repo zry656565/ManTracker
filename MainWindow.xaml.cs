@@ -9,6 +9,7 @@
     using System.Windows;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
+    using System.Drawing;
     using Microsoft.Kinect;
 
     /// <summary>
@@ -16,6 +17,7 @@
     /// </summary>
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
+        private const int BODY_MAX_NUMBER = 6;
         /// <summary>
         /// Size of the RGB pixel in the bitmap
         /// </summary>
@@ -244,16 +246,12 @@
                 {
                     unsafe
                     {
-                        byte[] writableBodyIndexData = new byte[depthHeight * depthWidth];
-                        byte* unwritableBodyIndexData = (byte*)bodyIndexData.UnderlyingBuffer;
+                        byte* bodyIndexDataPointer = (byte*)bodyIndexData.UnderlyingBuffer;
 
-                        Body[] bodys = new Body[10];
-                        int[,] buffer = new int[10,4]; // 10 bodys * 4 directions
-                        for (int i = 0; i < 10; ++i)
+                        Body[] bodys = new Body[BODY_MAX_NUMBER];
+                        for (byte i = 0; i < BODY_MAX_NUMBER; ++i)
                         {
-                            for (int j = 0; j < 4; ++j) {
-                                buffer[i,j] = 0;
-                            }
+                            bodys[i] = new Body(int.MaxValue, 0, 0, int.MaxValue);
                         }
 
                         int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
@@ -263,96 +261,61 @@
                             // Treat the color data as 4-byte pixels
                             uint* bitmapPixelsPointer = (uint*)this.bitmap.BackBuffer;
 
-                            byte[] pixels = new byte[9];
-
-                            for (int y = 1; y < depthHeight - 1; ++y)
-                            {
-                                for (int x = 1; x < depthWidth - 1; ++x)
-                                {
-                                    for (int j = 0; j < 3; ++j)
-                                    {
-                                        for (int i = 0; i < 3; ++i)
-                                        {
-                                            pixels[j * 3 + i] = unwritableBodyIndexData[(y - 1 + j) * depthWidth + (x - 1 + i)];
-                                        }
-                                    }
-                                    Array.Sort(pixels);
-                                    writableBodyIndexData[y * depthWidth + x] = pixels[5];
-                                }
-                            }
-
                             // Loop over each row and column of the color image
-                            // Zero out any pixels that don't correspond to a body index
-                            for (int colorIndex = 0; colorIndex < colorMappedToDepthPointCount; ++colorIndex)
+                            for (int y = 0; y < colorHeight; ++y)
                             {
-                                float colorMappedToDepthX = colorMappedToDepthPointsPointer[colorIndex].X;
-                                float colorMappedToDepthY = colorMappedToDepthPointsPointer[colorIndex].Y;
-
-                                // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
-                                if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
-                                    !float.IsNegativeInfinity(colorMappedToDepthY))
+                                for (int x = 0; x < colorWidth; ++x)
                                 {
-                                    // Make sure the depth pixel maps to a valid point in color space
-                                    int depthX = (int)(colorMappedToDepthX + 0.5f);
-                                    int depthY = (int)(colorMappedToDepthY + 0.5f);
-
-                                    // If the point is not valid, there is no body index there.
-                                    if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
+                                    float colorMappedToDepthX = colorMappedToDepthPointsPointer[y * colorWidth + x].X;
+                                    float colorMappedToDepthY = colorMappedToDepthPointsPointer[y * colorWidth + x].Y;
+                                    
+                                    // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
+                                    if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
+                                        !float.IsNegativeInfinity(colorMappedToDepthY))
                                     {
-                                        int depthIndex = (depthY * depthWidth) + depthX;
-
-                                        // If we are tracking a body for the current pixel, do not zero out the pixel
-                                        if (writableBodyIndexData[depthIndex] != 0xff)
+                                        // Make sure the depth pixel maps to a valid point in color space
+                                        int depthX = (int)(colorMappedToDepthX + 0.5f);
+                                        int depthY = (int)(colorMappedToDepthY + 0.5f);
+                                    
+                                        // If the point is not valid, there is no body index there.
+                                        if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
                                         {
+                                            int depthIndex = (depthY * depthWidth) + depthX;
+                                    
+                                            // If we are tracking a body for the current pixel, ...
+                                            int bodyIndex = bodyIndexDataPointer[depthIndex];
+                                            if (bodyIndex != 0xff)
+                                            {
+                                                // justify whether this point is true body
+                                                uint count = 0;
+                                                for (uint j = 0; j < 3; ++j)
+                                                    for (uint i = 0; i < 3; ++i)
+                                                        if (bodyIndex == bodyIndexDataPointer[(depthY - 1 + j) * depthWidth + (depthX - 1 + i)])
+                                                            count++;
+                                                if (count > 7) {
+                                                    bodys[bodyIndex].top    = Math.Min(bodys[bodyIndex].top, y);
+                                                    bodys[bodyIndex].bottom = Math.Max(bodys[bodyIndex].bottom, y);
+                                                    bodys[bodyIndex].left   = Math.Min(bodys[bodyIndex].left, x);
+                                                    bodys[bodyIndex].right  = Math.Max(bodys[bodyIndex].right, x);
+                                                }
+                                            }
                                             continue;
                                         }
                                     }
                                 }
-
-                                bitmapPixelsPointer[colorIndex] = 0;
                             }
-
-                        //    // Loop over each row and column of the color image
-                        //    for (int y = 0; y < colorHeight; ++y)
-                        //    {
-                        //        for (int x = 0; x < colorWidth; ++x)
-                        //        {
-                        //            float colorMappedToDepthX = colorMappedToDepthPointsPointer[ y * depthWidth + x ].X;
-                        //            float colorMappedToDepthY = colorMappedToDepthPointsPointer[ y * depthWidth + x ].Y;
-                                    
-                        //            // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
-                        //            if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
-                        //                !float.IsNegativeInfinity(colorMappedToDepthY))
-                        //            {
-                        //                // Make sure the depth pixel maps to a valid point in color space
-                        //                int depthX = (int)(colorMappedToDepthX + 0.5f);
-                        //                int depthY = (int)(colorMappedToDepthY + 0.5f);
-                                    
-                        //                // If the point is not valid, there is no body index there.
-                        //                if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
-                        //                {
-                        //                    int depthIndex = (depthY * depthWidth) + depthX;
-                                    
-                        //                    // If we are tracking a body for the current pixel, ...
-                        //                    int bodyIndex = writableBodyIndexData[depthIndex];
-                        //                    if (bodyIndex != 0xff)
-                        //                    {
-                        //                        buffer[bodyIndex, 0] += 1;
-                        //                        if (buffer[bodyIndex, 0] >= 10)
-                        //                        {
-                        //                            for (int i = 0; i < colorWidth; ++i)
-                        //                            {
-                        //                                bitmapPixelsPointer[y * colorWidth + i] = 0xffff0000; // a,r,g,b
-                        //                            }
-                        //                            buffer[bodyIndex, 0] = 0;
-                        //                            continue;
-                        //                        }
-                        //                    }
-                        //                }
-                        //            }
-                        //        }
-                        //    }
                         }
+
+                        Body initialBody = new Body(int.MaxValue, 0, 0, int.MaxValue);
+                        for (uint i = 0; i < BODY_MAX_NUMBER; i++)
+                        {
+                            Body body = bodys[i];
+                            if (!body.Equals(initialBody))
+                            {
+                                DrawRect(this.bitmap, body.top, body.right, body.bottom, body.left);
+                            }
+                        }
+                            
 
                         this.bitmap.AddDirtyRect(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight));
                     }
@@ -392,13 +355,29 @@
             this.StatusText = this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText
                                                             : Properties.Resources.SensorNotAvailableStatusText;
         }
+
+        private void DrawRect(WriteableBitmap bitmap, int top, int right, int bottom, int left, int stroke = 1)
+        {
+            bitmap.DrawLineAa(left, top, right, top, Colors.Blue, stroke);
+            bitmap.DrawLineAa(right, top, right, bottom, Colors.Blue, stroke);
+            bitmap.DrawLineAa(left, bottom, right, bottom, Colors.Blue, stroke);
+            bitmap.DrawLineAa(left, top, left, bottom, Colors.Blue, stroke);
+        }
     }
 
-    struct Body
+    public struct Body
     {
-        uint x1;
-        uint x2;
-        uint y1;
-        uint y2;
+        public int top;
+        public int bottom;
+        public int left;
+        public int right;
+
+        public Body(int _top = 0, int _right = int.MaxValue, int _bottom = int.MaxValue, int _left = 0)
+        {
+            this.top = _top;
+            this.left = _left;
+            this.bottom = _bottom;
+            this.right = _right;
+        }
     }
 }
