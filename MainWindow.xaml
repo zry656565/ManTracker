@@ -50,7 +50,6 @@
     
     <Viewbox Grid.Row="1" HorizontalAlignment="Center">
         <Grid Name="CompositeImage">
-            <Image Source="Images\Background.png" Stretch="UniformToFill" />
             <Image Source="{Binding ImageSource}" Stretch="UniformToFill" />
         </Grid>
     </Viewbox>

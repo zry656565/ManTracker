@@ -12,6 +12,11 @@
     using System.Drawing;
     using Microsoft.Kinect;
 
+    using Emgu.CV;
+    using Emgu.CV.Cuda;
+    using Emgu.CV.Structure;
+    using Emgu.CV.CvEnum;
+
     /// <summary>
     /// Interaction logic for MainWindow
     /// </summary>
@@ -247,7 +252,7 @@
                     unsafe
                     {
                         byte* bodyIndexDataPointer = (byte*)bodyIndexData.UnderlyingBuffer;
-
+                        
                         Body[] bodys = new Body[BODY_MAX_NUMBER];
                         for (byte i = 0; i < BODY_MAX_NUMBER; ++i)
                         {
@@ -255,6 +260,23 @@
                         }
 
                         int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
+
+                        #region Canny for BodyIndexFrame
+                        Stopwatch watch = Stopwatch.StartNew();
+                        Mat source = new Mat(depthHeight, depthWidth, DepthType.Cv8U, 1, bodyIndexData.UnderlyingBuffer, depthWidth);
+                        Mat cannyEdges = new Mat(depthHeight, depthWidth, DepthType.Cv8U, 1);
+                        double cannyThreshold = 180.0;
+                        double cannyThresholdLinking = 120.0;
+                        CvInvoke.Canny(source, cannyEdges, cannyThreshold, cannyThresholdLinking);
+                        
+                        watch.Stop();
+                        string output = "It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
+                        Console.WriteLine(output);
+                        this.StatusText = output;
+
+                        byte[] cannyArray = cannyEdges.GetData();
+                        fixed(byte* cannyResult = &cannyArray[0])
+                        #endregion
 
                         fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
                         {
@@ -268,7 +290,7 @@
                                 {
                                     float colorMappedToDepthX = colorMappedToDepthPointsPointer[y * colorWidth + x].X;
                                     float colorMappedToDepthY = colorMappedToDepthPointsPointer[y * colorWidth + x].Y;
-                                    
+
                                     // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
                                     if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
                                         !float.IsNegativeInfinity(colorMappedToDepthY))
@@ -281,6 +303,11 @@
                                         if ((depthX >= 0) && (depthX < depthWidth) && (depthY >= 0) && (depthY < depthHeight))
                                         {
                                             int depthIndex = (depthY * depthWidth) + depthX;
+
+                                            if (cannyResult[depthIndex] > 0)
+                                            {
+                                                bitmapPixelsPointer[y * colorWidth + x] = 0xffff0000;
+                                            }
                                     
                                             // If we are tracking a body for the current pixel, ...
                                             int bodyIndex = bodyIndexDataPointer[depthIndex];
@@ -288,16 +315,28 @@
                                             {
                                                 // justify whether this point is true body
                                                 uint count = 0;
-                                                for (uint j = 0; j < 3; ++j)
-                                                    for (uint i = 0; i < 3; ++i)
-                                                        if (bodyIndex == bodyIndexDataPointer[(depthY - 1 + j) * depthWidth + (depthX - 1 + i)])
-                                                            count++;
-                                                if (count > 7) {
-                                                    bodys[bodyIndex].top    = Math.Min(bodys[bodyIndex].top, y);
+
+                                                if (bodyIndex == bodyIndexDataPointer[(depthY - 1) * depthWidth + (depthX - 1)]) count++;
+                                                if (bodyIndex == bodyIndexDataPointer[(depthY) * depthWidth + (depthX + 1)]) count++;
+                                                if (bodyIndex == bodyIndexDataPointer[(depthY + 1) * depthWidth + (depthX)]) count++;
+                                                if (count == 3)
+                                                {
+                                                    bodys[bodyIndex].top = Math.Min(bodys[bodyIndex].top, y);
                                                     bodys[bodyIndex].bottom = Math.Max(bodys[bodyIndex].bottom, y);
-                                                    bodys[bodyIndex].left   = Math.Min(bodys[bodyIndex].left, x);
-                                                    bodys[bodyIndex].right  = Math.Max(bodys[bodyIndex].right, x);
+                                                    bodys[bodyIndex].left = Math.Min(bodys[bodyIndex].left, x);
+                                                    bodys[bodyIndex].right = Math.Max(bodys[bodyIndex].right, x);
                                                 }
+
+                                                //for (uint j = 0; j < 3; ++j)
+                                                //    for (uint i = 0; i < 3; ++i)
+                                                //        if (bodyIndex == bodyIndexDataPointer[(depthY - 1 + j) * depthWidth + (depthX - 1 + i)])
+                                                //            count++;
+                                                //if (count > 7) {
+                                                //    bodys[bodyIndex].top    = Math.Min(bodys[bodyIndex].top, y);
+                                                //    bodys[bodyIndex].bottom = Math.Max(bodys[bodyIndex].bottom, y);
+                                                //    bodys[bodyIndex].left   = Math.Min(bodys[bodyIndex].left, x);
+                                                //    bodys[bodyIndex].right  = Math.Max(bodys[bodyIndex].right, x);
+                                                //}
                                             }
                                             continue;
                                         }
@@ -315,7 +354,6 @@
                                 DrawRect(this.bitmap, body.top, body.right, body.bottom, body.left);
                             }
                         }
-                            
 
                         this.bitmap.AddDirtyRect(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight));
                     }
