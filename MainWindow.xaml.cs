@@ -6,6 +6,7 @@
     using System.Globalization;
     using System.IO;
     using System.Collections;
+    using System.Collections.Generic;
     using System.Windows;
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
@@ -22,6 +23,7 @@
     /// </summary>
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
+        private const int MAX_FPS = 15;
         private const int BODY_MAX_NUMBER = 6;
         /// <summary>
         /// Size of the RGB pixel in the bitmap
@@ -68,6 +70,8 @@
         /// </summary>
         private string statusText = null;
 
+        private DateTime timestamp;
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
@@ -101,6 +105,7 @@
                                                             : Properties.Resources.NoSensorStatusText;
 
             this.DataContext = this;
+            this.timestamp = DateTime.Now;
             this.InitializeComponent();
         }
 
@@ -172,6 +177,12 @@
         /// <param name="e">event arguments</param>
         private void Reader_MultiSourceFrameArrived(object sender, MultiSourceFrameArrivedEventArgs e)
         {
+            double fps = 0;
+            TimeSpan elapsedSpan = new TimeSpan(DateTime.Now.Ticks - this.timestamp.Ticks);
+            if (elapsedSpan.Milliseconds < (1000f / MAX_FPS)) return;
+            fps = 1000f / elapsedSpan.Milliseconds;
+            this.timestamp = DateTime.Now;
+
             int depthWidth = 0;
             int depthHeight = 0;
             int colorWidth = 0;
@@ -270,7 +281,7 @@
                         CvInvoke.Canny(source, cannyEdges, cannyThreshold, cannyThresholdLinking);
                         
                         watch.Stop();
-                        string output = "It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
+                        string output = "fps: " + fps.ToString("0.00") + " , It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
                         Console.WriteLine(output);
                         this.StatusText = output;
 
