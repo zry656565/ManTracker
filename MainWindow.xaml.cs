@@ -25,6 +25,13 @@
     {
         private const int MAX_FPS = 15;
         private const int BODY_MAX_NUMBER = 6;
+        private const float FOCAL_LENGTH_IN_PIXELS = 241.37f; // fake
+        // Location of the camera
+        private const float CAMERA_LOC_X = 0;
+        private const float CAMERA_LOC_Y = 0;
+        private const float CAMERA_LOC_Z = 0;
+        private const double CAMERA_ANGEL = 0f;  // in radians
+
         /// <summary>
         /// Size of the RGB pixel in the bitmap
         /// </summary>
@@ -65,12 +72,15 @@
         /// </summary>
         private DepthSpacePoint[] colorMappedToDepthPoints = null;
 
+        private int colorWidth = 0, colorHeight = 0,
+                    depthWidth = 0, depthHeight = 0;
+
         /// <summary>
         /// Current status text to display
         /// </summary>
-        private string statusText = null;
-        private string infoText = null;
-        private string locationText = null;
+        private string statusText = null,
+                       infoText = null,
+                       locationText = null;
 
         private DateTime timestamp;
 
@@ -86,12 +96,12 @@
             this.coordinateMapper = this.kinectSensor.CoordinateMapper;
 
             FrameDescription depthFrameDescription = this.kinectSensor.DepthFrameSource.FrameDescription;
-            int depthWidth = depthFrameDescription.Width;
-            int depthHeight = depthFrameDescription.Height;
+            depthWidth = depthFrameDescription.Width;
+            depthHeight = depthFrameDescription.Height;
 
             FrameDescription colorFrameDescription = this.kinectSensor.ColorFrameSource.FrameDescription;
-            int colorWidth = colorFrameDescription.Width;
-            int colorHeight = colorFrameDescription.Height;
+            colorWidth = colorFrameDescription.Width;
+            colorHeight = colorFrameDescription.Height;
 
             this.colorMappedToDepthPoints = new DepthSpacePoint[colorWidth * colorHeight];
             this.depthMappedToColorPoints = new ColorSpacePoint[depthWidth * depthHeight];
@@ -214,6 +224,11 @@
             }
         }
 
+        private DepthSpacePoint getDepthPoint(int x, int y)
+        {
+            return colorMappedToDepthPoints[y * colorWidth + x];
+        }
+
         /// <summary>
         /// Handles the depth/color/body index frame data arriving from the sensor
         /// </summary>
@@ -226,11 +241,6 @@
             if (elapsedSpan.Milliseconds < (1000f / MAX_FPS)) return;
             fps = 1000f / elapsedSpan.Milliseconds;
             this.timestamp = DateTime.Now;
-
-            int depthWidth = 0;
-            int depthHeight = 0;
-            int colorWidth = 0;
-            int colorHeight = 0;
                     
             DepthFrame depthFrame = null;
             ColorFrame colorFrame = null;
@@ -262,14 +272,8 @@
 
                 FrameDescription colorFrameDescription = colorFrame.FrameDescription;
 
-                colorWidth = colorFrameDescription.Width;
-                colorHeight = colorFrameDescription.Height;
-
                 // Process Depth
                 FrameDescription depthFrameDescription = depthFrame.FrameDescription;
-
-                depthWidth = depthFrameDescription.Width;
-                depthHeight = depthFrameDescription.Height;
 
                 // Access the depth frame data directly via LockImageBuffer to avoid making a copy
                 using (KinectBuffer depthFrameData = depthFrame.LockImageBuffer())
@@ -284,6 +288,10 @@
                         depthFrameData.Size,
                         this.depthMappedToColorPoints);
                 }
+
+                ushort[] depthData = new ushort[depthWidth * depthHeight];
+
+                depthFrame.CopyFrameDataToArray(depthData);
 
                 // We're done with the DepthFrame 
                 depthFrame.Dispose();
@@ -343,8 +351,9 @@
                             {
                                 for (int x = 0; x < colorWidth; ++x)
                                 {
-                                    float colorMappedToDepthX = colorMappedToDepthPointsPointer[y * colorWidth + x].X;
-                                    float colorMappedToDepthY = colorMappedToDepthPointsPointer[y * colorWidth + x].Y;
+                                    DepthSpacePoint depthPoint = getDepthPoint(x, y);
+                                    float colorMappedToDepthX = depthPoint.X;
+                                    float colorMappedToDepthY = depthPoint.Y;
 
                                     // The sentinel value is -inf, -inf, meaning that no depth pixel corresponds to this color pixel.
                                     if (!float.IsNegativeInfinity(colorMappedToDepthX) &&
@@ -400,6 +409,7 @@
                             }
                         }
 
+                        this.LocationText = "";
                         Body initialBody = new Body(int.MaxValue, 0, 0, int.MaxValue);
                         for (uint i = 0; i < BODY_MAX_NUMBER; i++)
                         {
@@ -407,6 +417,24 @@
                             if (!body.Equals(initialBody))
                             {
                                 DrawRect(this.bitmap, body.top, body.right, body.bottom, body.left);
+
+                                // calculate the actual location of this body
+                                List<int> values = new List<int>(9);
+                                DepthSpacePoint point = getDepthPoint((body.right + body.left) / 2, (body.bottom + body.top) / 2);
+                                if (!float.IsNegativeInfinity(point.X) &&
+                                    !float.IsNegativeInfinity(point.Y))
+                                {
+                                    int depthX = (int)(point.X + 0.5f);
+                                    int depthY = (int)(point.Y + 0.5f);
+                                    double screenX = depthX - depthWidth / 2f;
+                                    double screenY = depthY - depthHeight / 2f;
+                                    double depth = depthData[depthY * depthWidth + depthX] / 1000f;
+                                    double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX / FOCAL_LENGTH_IN_PIXELS * depth * Math.Sin(CAMERA_ANGEL);
+                                    double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX / FOCAL_LENGTH_IN_PIXELS * depth * Math.Cos(CAMERA_ANGEL);
+                                    double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
+                                    this.LocationText += "Depth: " + depth.ToString("0.00") + ", Location( x:" + bodyLocationX.ToString("0.00") 
+                                        + ", y:" + bodyLocationY.ToString("0.00") + ", z:" + bodyLocationZ.ToString("0.00") + " );";
+                                }
                             }
                         }
 
