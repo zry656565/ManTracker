@@ -69,6 +69,8 @@
         /// Current status text to display
         /// </summary>
         private string statusText = null;
+        private string infoText = null;
+        private string locationText = null;
 
         private DateTime timestamp;
 
@@ -144,6 +146,48 @@
                     if (this.PropertyChanged != null)
                     {
                         this.PropertyChanged(this, new PropertyChangedEventArgs("StatusText"));
+                    }
+                }
+            }
+        }
+
+        public string InfoText
+        {
+            get
+            {
+                return this.infoText;
+            }
+
+            set
+            {
+                if (this.infoText != value)
+                {
+                    this.infoText = value;
+
+                    if (this.PropertyChanged != null)
+                    {
+                        this.PropertyChanged(this, new PropertyChangedEventArgs("InfoText"));
+                    }
+                }
+            }
+        }
+
+        public string LocationText
+        {
+            get
+            {
+                return this.locationText;
+            }
+
+            set
+            {
+                if (this.locationText != value)
+                {
+                    this.locationText = value;
+
+                    if (this.PropertyChanged != null)
+                    {
+                        this.PropertyChanged(this, new PropertyChangedEventArgs("LocationText"));
                     }
                 }
             }
@@ -283,7 +327,7 @@
                         watch.Stop();
                         string output = "fps: " + fps.ToString("0.00") + " , It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
                         Console.WriteLine(output);
-                        this.StatusText = output;
+                        this.InfoText = output;
 
                         byte[] cannyArray = cannyEdges.GetData();
                         fixed(byte* cannyResult = &cannyArray[0])
