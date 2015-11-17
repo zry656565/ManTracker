@@ -84,6 +84,8 @@
 
         private DateTime timestamp;
 
+        private Transporter transporter;
+
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
         /// </summary>
@@ -118,6 +120,10 @@
 
             this.DataContext = this;
             this.timestamp = DateTime.Now;
+
+            transporter = new Transporter();
+            transporter.Connect();
+
             this.InitializeComponent();
         }
 
@@ -410,6 +416,7 @@
                         }
 
                         this.LocationText = "";
+                        string requestStr = "";
                         Body initialBody = new Body(int.MaxValue, 0, 0, int.MaxValue);
                         for (uint i = 0; i < BODY_MAX_NUMBER; i++)
                         {
@@ -429,14 +436,19 @@
                                     double screenX = depthX - depthWidth / 2f;
                                     double screenY = depthY - depthHeight / 2f;
                                     double depth = depthData[depthY * depthWidth + depthX] / 1000f;
-                                    double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX / FOCAL_LENGTH_IN_PIXELS * depth * Math.Sin(CAMERA_ANGEL);
-                                    double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX / FOCAL_LENGTH_IN_PIXELS * depth * Math.Cos(CAMERA_ANGEL);
+                                    double rate = depth / FOCAL_LENGTH_IN_PIXELS;
+                                    double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX * Math.Sin(CAMERA_ANGEL) * rate;
+                                    double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX * Math.Cos(CAMERA_ANGEL) * rate;
                                     double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
                                     this.LocationText += "Depth: " + depth.ToString("0.00") + ", Location( x:" + bodyLocationX.ToString("0.00") 
                                         + ", y:" + bodyLocationY.ToString("0.00") + ", z:" + bodyLocationZ.ToString("0.00") + " );";
+                                    requestStr += bodyLocationX + ":" + bodyLocationY + ";";
                                 }
                             }
                         }
+
+                        if (transporter.status == Transporter.STATUS.CONNECTED)
+                            transporter.Send(requestStr);
 
                         this.bitmap.AddDirtyRect(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight));
                     }

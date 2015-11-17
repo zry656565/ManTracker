@@ -8,31 +8,42 @@ using System.Net.Sockets;
 
 namespace SJTU.IOTLab.ManTracking
 {
-    class Transport
+    class Transporter
     {
-        private const IPAddress IP = IPAddress.Parse("127.0.0.1");
+        private const string IP = "192.168.1.109";
         private const int PORT = 4399;
         private Socket socket = null;
+        public STATUS status = STATUS.DISCONNECTED;
+        public enum STATUS { DISCONNECTED = -1, CONNECTED = 0 }
 
-        private Socket ConnectSocket()
+        public STATUS Connect()
         {
             // Create a socket connection with the specified server and port.
-            IPEndPoint ipe = new IPEndPoint(IP, PORT);
+            IPEndPoint ipe = new IPEndPoint(IPAddress.Parse(IP), PORT);
             socket = new Socket(ipe.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(ipe);
+            try
+            {
+                socket.Connect(ipe);
+            }
+            catch
+            {
+                return status = STATUS.DISCONNECTED;
+            }
 
-            return socket;
+            return status = STATUS.CONNECTED;
         }
 
         // This method requests the home page content for the specified server.
-        private int Send(string data)
+        public int Send(string data)
         {
-            if (socket == null)
-                socket = ConnectSocket();
-            if (socket == null)
+            if (status == STATUS.DISCONNECTED)
             {
-                Console.WriteLine("Connection Failure.");
-                return 500;
+                Connect();
+                if (status == STATUS.DISCONNECTED)
+                {
+                    Console.WriteLine("Connection Failure.");
+                    return 500;
+                }
             }
 
             Byte[] bytesSent = Encoding.ASCII.GetBytes(data);
