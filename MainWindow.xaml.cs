@@ -18,6 +18,8 @@
     using Emgu.CV.Structure;
     using Emgu.CV.CvEnum;
 
+    using SJTU.IOTLab.ManTracking.ImageProcess;
+
     /// <summary>
     /// Interaction logic for MainWindow
     /// </summary>
@@ -330,23 +332,16 @@
 
                         int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
 
-                        #region Canny for BodyIndexFrame
+                        // use canny algorithm to detect edge...
                         Stopwatch watch = Stopwatch.StartNew();
-                        Mat source = new Mat(depthHeight, depthWidth, DepthType.Cv8U, 1, bodyIndexData.UnderlyingBuffer, depthWidth);
-                        Mat cannyEdges = new Mat(depthHeight, depthWidth, DepthType.Cv8U, 1);
-                        double cannyThreshold = 180.0;
-                        double cannyThresholdLinking = 120.0;
-                        CvInvoke.Canny(source, cannyEdges, cannyThreshold, cannyThresholdLinking);
-                        
+                        byte[] result = EdgeDetection.Canny(bodyIndexData.UnderlyingBuffer, depthWidth, depthHeight);
                         watch.Stop();
+
                         string output = "fps: " + fps.ToString("0.00") + " , It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
                         Console.WriteLine(output);
                         this.InfoText = output;
 
-                        byte[] cannyArray = cannyEdges.GetData();
-                        fixed(byte* cannyResult = &cannyArray[0])
-                        #endregion
-
+                        fixed (byte* cannyResult = &result[0])
                         fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
                         {
                             // Treat the color data as 4-byte pixels
