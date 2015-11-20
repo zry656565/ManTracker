@@ -27,7 +27,15 @@
     {
         private const int MAX_FPS = 15;
         private const int BODY_MAX_NUMBER = 6;
-        private const float FOCAL_LENGTH_IN_PIXELS = 241.37f; // fake
+        /***
+         * f = w / (2tan(fov/2))
+         * Referrence
+         * - http://smeenk.com/kinect-field-of-view-comparison/
+         * - http://stackoverflow.com/questions/17832238/kinect-intrinsic-parameters-from-field-of-view
+         */
+        private const float FOCAL_LENGTH_IN_PIXELS_X = 361.6f; // 512 / (2 * tan(70.6/2))
+        private const float FOCAL_LENGTH_IN_PIXELS_Y = 367.2f; // 424 / (2 * tan(60/2))
+        private const float FOCAL_LENGTH_IN_PIXELS = 364.4f;  // f = sqrt((fx^2 + fy^2)/2) 
         // Location of the camera
         private const float CAMERA_LOC_X = 0;
         private const float CAMERA_LOC_Y = 0;
