@@ -445,7 +445,12 @@
                                     double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
                                     this.LocationText += "Depth: " + depth.ToString("0.00") + ", Location( x:" + bodyLocationX.ToString("0.00") 
                                         + ", y:" + bodyLocationY.ToString("0.00") + ", z:" + bodyLocationZ.ToString("0.00") + " );";
-                                    requestStr += bodyLocationX + ":" + bodyLocationY + ";";
+
+                                    // Relative Location
+                                    requestStr += depth + ":" + screenX + ";";
+
+                                    // Absolute location
+                                    // requestStr += bodyLocationX + ":" + bodyLocationY + ";";
                                 }
                             }
                         }
