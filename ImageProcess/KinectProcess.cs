@@ -9,6 +9,8 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Kinect;
 
+using SJTU.IOTLab.ManTracking.Struct;
+
 namespace SJTU.IOTLab.ManTracking.ImageProcess
 {
     public delegate void KinectStatusUpdated(string status);
@@ -215,10 +217,10 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                     {
                         byte* bodyIndexDataPointer = (byte*)bodyIndexData.UnderlyingBuffer;
 
-                        Body[] bodys = new Body[BODY_MAX_NUMBER];
+                        BodyRect[] bodys = new BodyRect[BODY_MAX_NUMBER];
                         for (byte i = 0; i < BODY_MAX_NUMBER; ++i)
                         {
-                            bodys[i] = new Body(int.MaxValue, 0, 0, int.MaxValue);
+                            bodys[i] = new BodyRect(int.MaxValue, 0, 0, int.MaxValue);
                         }
 
                         int colorMappedToDepthPointCount = this.colorMappedToDepthPoints.Length;
@@ -301,10 +303,10 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                         }
 
                         List<Location> locations = new List<Location>();
-                        Body initialBody = new Body(int.MaxValue, 0, 0, int.MaxValue);
+                        BodyRect initialBody = new BodyRect(int.MaxValue, 0, 0, int.MaxValue);
                         for (uint i = 0; i < BODY_MAX_NUMBER; i++)
                         {
-                            Body body = bodys[i];
+                            BodyRect body = bodys[i];
                             if (!body.Equals(initialBody))
                             {
                                 DrawRect(this.bitmap, body.top, body.right, body.bottom, body.left);

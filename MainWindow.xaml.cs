@@ -1,19 +1,21 @@
-﻿namespace SJTU.IOTLab.ManTracking
-{
-    using System;
-    using System.ComponentModel;
-    using System.Diagnostics;
-    using System.Globalization;
-    using System.IO;
-    using System.Collections;
-    using System.Collections.Generic;
-    using System.Windows;
-    using System.Windows.Media;
-    using System.Windows.Media.Imaging;
-    using System.Drawing;
-    using Microsoft.Kinect;
-    using SJTU.IOTLab.ManTracking.ImageProcess;
+﻿using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Collections;
+using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Drawing;
+using Microsoft.Kinect;
+using SJTU.IOTLab.ManTracking.ImageProcess;
+using SJTU.IOTLab.ManTracking.Struct;
+using SJTU.IOTLab.ManTracking.Helper;
 
+namespace SJTU.IOTLab.ManTracking
+{
     /// <summary>
     /// Interaction logic for MainWindow
     /// </summary>

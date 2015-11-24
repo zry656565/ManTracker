@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.Net;
 using System.Net.Sockets;
 
-namespace SJTU.IOTLab.ManTracking
+namespace SJTU.IOTLab.ManTracking.Helper
 {
     class Transporter
     {

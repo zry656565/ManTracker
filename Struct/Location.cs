@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SJTU.IOTLab.ManTracking.ImageProcess
+namespace SJTU.IOTLab.ManTracking.Struct
 {
     public class Location
     {
@@ -28,22 +28,6 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             this.depth = depth;
             this.offset = offset;
             this.isRelative = true;
-        }
-    }
-
-    public struct Body
-    {
-        public int top;
-        public int bottom;
-        public int left;
-        public int right;
-
-        public Body(int _top = 0, int _right = int.MaxValue, int _bottom = int.MaxValue, int _left = 0)
-        {
-            this.top = _top;
-            this.left = _left;
-            this.bottom = _bottom;
-            this.right = _right;
         }
     }
 }
