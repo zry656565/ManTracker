@@ -20,19 +20,9 @@
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
         /// <summary>
-        /// Size of the RGB pixel in the bitmap
-        /// </summary>
-        private readonly int bytesPerPixel = (PixelFormats.Bgr32.BitsPerPixel + 7) / 8;
-
-        /// <summary>
         /// Bitmap to display
         /// </summary>
         private WriteableBitmap bitmap = null;
-
-        /// <summary>
-        /// The size in bytes of the bitmap back buffer
-        /// </summary>
-        private uint bitmapBackBufferSize = 0;
 
         /// <summary>
         /// Current status text to display
@@ -50,11 +40,12 @@
         public MainWindow()
         {
             transporter = new Transporter();
-            transporter.Connect();
+            // transporter.Connect();
 
             kinectProcess = new KinectProcess();
-            kinectProcess.Initialize(kinectStatusUpdated, processStatusUpdated, locationUpdated);
-
+            kinectProcess.Initialize(kinectStatusUpdated, processStatusUpdated, locationUpdated, bitmapInit);
+            
+            this.DataContext = this;
             this.InitializeComponent();
         }
 
@@ -65,20 +56,25 @@
 
         private void processStatusUpdated(double fps, string otherStatus)
         {
-            this.infoText = "fps: " + fps.ToString("0.00") + ", " + otherStatus;
+            this.InfoText = "fps: " + fps.ToString("0.00") + ", " + otherStatus;
         }
 
         private void locationUpdated(Location[] locations)
         {
-            if (transporter.status == Transporter.STATUS.CONNECTED)
+            string requestStr = "";
+            for (int i = 0; i < locations.Length; ++i)
             {
-                string requestStr = "";
-                for (int i = 0; i < locations.Length; ++i)
-                {
-                    requestStr += locations[i].depth.ToString("0.00") + ":" + locations[i].offset.ToString("0.00") + ";";
-                }
-                transporter.Send(requestStr);
+                requestStr += locations[i].depth.ToString("0.00") + ":" + locations[i].offset.ToString("0.00") + ";";
             }
+
+            this.LocationText = requestStr;
+            if (transporter.status == Transporter.STATUS.CONNECTED)
+                transporter.Send(requestStr);                
+        }
+
+        private void bitmapInit(WriteableBitmap bitmap)
+        {
+            this.bitmap = bitmap;
         }
 
         /// <summary>

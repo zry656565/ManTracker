@@ -14,6 +14,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
     public delegate void KinectStatusUpdated(string status);
     public delegate void ProcessStatusUpdated(double fps, string otherStatus);
     public delegate void LocationUpdated(Location[] locations);
+    public delegate void BitmapInit(WriteableBitmap bitmap);
 
     class KinectProcess
     {
@@ -86,7 +87,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
         private ProcessStatusUpdated processStatusUpdated = null;
         private LocationUpdated locationUpdated = null;
 
-        public void Initialize(KinectStatusUpdated kinectStatusUpdated, ProcessStatusUpdated processStatusUpdated, LocationUpdated locationUpdated)
+        public void Initialize(KinectStatusUpdated kinectStatusUpdated, ProcessStatusUpdated processStatusUpdated, LocationUpdated locationUpdated, BitmapInit bitmapInit)
         {
             this.kinectSensor = KinectSensor.GetDefault();
 
@@ -109,12 +110,14 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 
             // Calculate the WriteableBitmap back buffer size
             this.bitmapBackBufferSize = (uint)((this.bitmap.BackBufferStride * (this.bitmap.PixelHeight - 1)) + (this.bitmap.PixelWidth * this.bytesPerPixel));
+            bitmapInit(this.bitmap);
             this.kinectSensor.IsAvailableChanged += this.Sensor_IsAvailableChanged;
             this.kinectSensor.Open();
 
             this.kinectStatusUpdated = kinectStatusUpdated;
             this.processStatusUpdated = processStatusUpdated;
             this.locationUpdated = locationUpdated;
+            this.frameDataArrived = frameDataArrived;
 
             kinectStatusUpdated(this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText);
 
