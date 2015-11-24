@@ -117,7 +117,6 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             this.kinectStatusUpdated = kinectStatusUpdated;
             this.processStatusUpdated = processStatusUpdated;
             this.locationUpdated = locationUpdated;
-            this.frameDataArrived = frameDataArrived;
 
             kinectStatusUpdated(this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.NoSensorStatusText);
 
@@ -327,7 +326,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                                     double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
 
                                     // Relative Location
-                                    locations.Add(new Location(depth, screenX));
+                                    locations.Add(new Location(depth, screenX * rate));
 
                                     // Absolute location
                                     // locations.Add(new Location(bodyLocationX, bodyLocationY, bodyLocationZ));
