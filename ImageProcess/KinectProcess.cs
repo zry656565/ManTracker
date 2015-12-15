@@ -194,6 +194,13 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 
                 depthFrame.CopyFrameDataToArray(depthData);
 
+                List<Location> points = new List<Location>();
+                points.Add(transformToLocation(480, 200, depthData));
+                points.Add(transformToLocation(480, 230, depthData));
+                points.Add(transformToLocation(470, 220, depthData));
+                points.Add(transformToLocation(460, 300, depthData));
+                PlaneDetection.calc(points);
+
                 // We're done with the DepthFrame 
                 depthFrame.Dispose();
                 depthFrame = null;
@@ -312,27 +319,9 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                                 DrawRect(this.bitmap, body.top, body.right, body.bottom, body.left);
 
                                 // calculate the actual location of this body
-                                List<int> values = new List<int>(9);
                                 DepthSpacePoint point = getDepthPoint((body.right + body.left) / 2, (body.bottom + body.top) / 2);
-                                if (!float.IsNegativeInfinity(point.X) &&
-                                    !float.IsNegativeInfinity(point.Y))
-                                {
-                                    int depthX = (int)(point.X + 0.5f);
-                                    int depthY = (int)(point.Y + 0.5f);
-                                    double screenX = depthX - depthWidth / 2f;
-                                    double screenY = depthY - depthHeight / 2f;
-                                    double depth = depthData[depthY * depthWidth + depthX] / 1000f;
-                                    double rate = depth / FOCAL_LENGTH_IN_PIXELS;
-                                    double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX * Math.Sin(CAMERA_ANGEL) * rate;
-                                    double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX * Math.Cos(CAMERA_ANGEL) * rate;
-                                    double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
-
-                                    // Relative Location
-                                    locations.Add(new Location(depth, screenX * rate));
-
-                                    // Absolute location
-                                    // locations.Add(new Location(bodyLocationX, bodyLocationY, bodyLocationZ));
-                                }
+                                Location loc = transformToLocation(point, depthData, true);
+                                if (loc.depth > 0) locations.Add(loc);
                             }
                         }
 
@@ -403,6 +392,31 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                 this.kinectSensor.Close();
                 this.kinectSensor = null;
             }
+        }
+
+        public Location transformToLocation(float pointX, float pointY, ushort[] depthData, bool isRelative = false)
+        {
+            if (!float.IsNegativeInfinity(pointX) &&
+                !float.IsNegativeInfinity(pointY))
+            {
+                int depthX = (int)(pointX + 0.5f);
+                int depthY = (int)(pointY + 0.5f);
+                double screenX = depthX - depthWidth / 2f;
+                double screenY = depthY - depthHeight / 2f;
+                double depth = depthData[depthY * depthWidth + depthX] / 1000f;
+                double rate = depth / FOCAL_LENGTH_IN_PIXELS;
+                double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX * Math.Sin(CAMERA_ANGEL) * rate;
+                double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX * Math.Cos(CAMERA_ANGEL) * rate;
+                double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
+
+                return isRelative ? new Location(depth, screenX * rate) : new Location(bodyLocationX, bodyLocationY, bodyLocationZ);
+            }
+            return isRelative ? new Location(0, 0) : new Location(0, 0, 0);
+        }
+
+        public Location transformToLocation(DepthSpacePoint point, ushort[] depthData, bool isRelative = false)
+        {
+            return transformToLocation(point.X, point.Y, depthData, isRelative);
         }
     }
 }
