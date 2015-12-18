@@ -56,9 +56,9 @@ namespace SJTU.IOTLab.ManTracking
             this.StatusText = status;
         }
 
-        private void processStatusUpdated(double fps, string otherStatus)
+        private void processStatusUpdated(string status)
         {
-            this.InfoText = "fps: " + fps.ToString("0.00") + ", " + otherStatus;
+            this.InfoText = status;
         }
 
         private void locationUpdated(Location[] locations)

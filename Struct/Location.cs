@@ -14,6 +14,8 @@ namespace SJTU.IOTLab.ManTracking.Struct
         public double depth = 0f;
         public double offset = 0f;
         public bool isRelative = true;
+        public int depthFrameX = -1;
+        public int depthFrameY = -1;
 
         public Location(double x, double y, double z)
         {

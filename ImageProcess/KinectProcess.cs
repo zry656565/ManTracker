@@ -14,7 +14,7 @@ using SJTU.IOTLab.ManTracking.Struct;
 namespace SJTU.IOTLab.ManTracking.ImageProcess
 {
     public delegate void KinectStatusUpdated(string status);
-    public delegate void ProcessStatusUpdated(double fps, string otherStatus);
+    public delegate void ProcessStatusUpdated(string status);
     public delegate void LocationUpdated(Location[] locations);
     public delegate void BitmapInit(WriteableBitmap bitmap);
 
@@ -35,7 +35,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
         private const float CAMERA_LOC_X = 0;
         private const float CAMERA_LOC_Y = 0;
         private const float CAMERA_LOC_Z = 0;
-        private const double CAMERA_ANGEL = 0f;  // in radians
+        private const double CAMERA_ANGEL = Math.PI / 2;  // in radians
 
         /// <summary>
         /// Size of the RGB pixel in the bitmap
@@ -130,6 +130,11 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             return colorMappedToDepthPoints[y * colorWidth + x];
         }
 
+        private ColorSpacePoint getColorPoint(int x, int y)
+        {
+            return depthMappedToColorPoints[y * depthWidth + x];
+        }
+
         /// <summary>
         /// Handles the depth/color/body index frame data arriving from the sensor
         /// </summary>
@@ -194,13 +199,6 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 
                 depthFrame.CopyFrameDataToArray(depthData);
 
-                List<Location> points = new List<Location>();
-                points.Add(transformToLocation(480, 200, depthData));
-                points.Add(transformToLocation(480, 230, depthData));
-                points.Add(transformToLocation(470, 220, depthData));
-                points.Add(transformToLocation(460, 300, depthData));
-                PlaneDetection.calc(points);
-
                 // We're done with the DepthFrame 
                 depthFrame.Dispose();
                 depthFrame = null;
@@ -237,8 +235,20 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                         byte[] result = EdgeDetection.Canny(bodyIndexData.UnderlyingBuffer, depthWidth, depthHeight);
                         watch.Stop();
 
-                        string output = "fps: " + fps.ToString("0.00") + " , It takes " + watch.ElapsedMilliseconds + "ms for Canny.";
-                        processStatusUpdated(fps, "It takes " + watch.ElapsedMilliseconds + "ms for Canny.");
+                        List<Location> points = new List<Location>();
+                        points.Add(transformToLocation(440, 200, depthData));
+                        points.Add(transformToLocation(420, 230, depthData));
+                        points.Add(transformToLocation(470, 220, depthData));
+                        points.Add(transformToLocation(460, 300, depthData));
+                        points.Add(transformToLocation(400, 280, depthData));
+                        points.Add(transformToLocation(370, 280, depthData));
+                        Plane plane = PlaneDetection.calc(points);
+                        double angel = Math.Abs(Math.Atan(-1 / plane.k));
+                        double distance = plane.b * Math.Sin(angel);
+
+                        string output = string.Format("fps: {0:F}, It takes {1:F} ms for Canny. k: {2:F}, b: {3:F}, angel: {4:F}, distance: {5:F}",
+                            fps, watch.ElapsedMilliseconds, plane.k, plane.b, angel * 180 / Math.PI, distance);
+                        processStatusUpdated(output);
 
                         fixed (byte* cannyResult = &result[0])
                         fixed (DepthSpacePoint* colorMappedToDepthPointsPointer = this.colorMappedToDepthPoints)
@@ -309,6 +319,12 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                             }
                         }
 
+                        for (int i = 0; i < points.Count; ++i)
+                        {
+                            ColorSpacePoint point = getColorPoint(points[i].depthFrameX, points[i].depthFrameY);
+                            DrawPoint(this.bitmap, point);
+                        }
+
                         List<Location> locations = new List<Location>();
                         BodyRect initialBody = new BodyRect(int.MaxValue, 0, 0, int.MaxValue);
                         for (uint i = 0; i < BODY_MAX_NUMBER; i++)
@@ -365,6 +381,11 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             kinectStatusUpdated(this.kinectSensor.IsAvailable ? Properties.Resources.RunningStatusText : Properties.Resources.SensorNotAvailableStatusText);
         }
 
+        private void DrawPoint(WriteableBitmap bitmap, ColorSpacePoint p)
+        {
+            bitmap.DrawLineAa((int)p.X - 5, (int)p.Y - 5, (int)p.X + 5, (int)p.Y + 5, Colors.Cyan, 20);
+        }
+
         private void DrawRect(WriteableBitmap bitmap, int top, int right, int bottom, int left, int stroke = 10)
         {
             left = Math.Max(stroke, left);
@@ -396,6 +417,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 
         public Location transformToLocation(float pointX, float pointY, ushort[] depthData, bool isRelative = false)
         {
+            Location result;
             if (!float.IsNegativeInfinity(pointX) &&
                 !float.IsNegativeInfinity(pointY))
             {
@@ -405,13 +427,20 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                 double screenY = depthY - depthHeight / 2f;
                 double depth = depthData[depthY * depthWidth + depthX] / 1000f;
                 double rate = depth / FOCAL_LENGTH_IN_PIXELS;
-                double bodyLocationX = CAMERA_LOC_X + depth * Math.Cos(CAMERA_ANGEL) + screenX * Math.Sin(CAMERA_ANGEL) * rate;
+                // 小孔成像，X轴反转
+                double bodyLocationX = CAMERA_LOC_X - (depth * Math.Cos(CAMERA_ANGEL) + screenX * Math.Sin(CAMERA_ANGEL) * rate);
                 double bodyLocationY = CAMERA_LOC_Y + depth * Math.Sin(CAMERA_ANGEL) - screenX * Math.Cos(CAMERA_ANGEL) * rate;
                 double bodyLocationZ = CAMERA_LOC_Z - screenY / FOCAL_LENGTH_IN_PIXELS * depth;
 
-                return isRelative ? new Location(depth, screenX * rate) : new Location(bodyLocationX, bodyLocationY, bodyLocationZ);
+                result = isRelative ? new Location(depth, screenX * rate) : new Location(bodyLocationX, bodyLocationY, bodyLocationZ);
+                result.depthFrameX = depthX;
+                result.depthFrameY = depthY;
             }
-            return isRelative ? new Location(0, 0) : new Location(0, 0, 0);
+            else
+            {
+                result = isRelative ? new Location(0, 0) : new Location(0, 0, 0);
+            }
+            return result;
         }
 
         public Location transformToLocation(DepthSpacePoint point, ushort[] depthData, bool isRelative = false)

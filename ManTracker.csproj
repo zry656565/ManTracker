@@ -165,9 +165,11 @@
     </ApplicationDefinition>
     <Compile Include="ImageProcess\EdgeDetection.cs" />
     <Compile Include="ImageProcess\KinectProcess.cs" />
+    <Compile Include="ImageProcess\PlaneDetection.cs" />
     <Compile Include="Struct\BodyRect.cs" />
     <Compile Include="Struct\Location.cs" />
     <Compile Include="Helper\Transporter.cs" />
+    <Compile Include="Struct\Plane.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

@@ -9,7 +9,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 {
     class PlaneDetection
     {
-        public static void calc(List<Location> points)
+        public static Plane calc(List<Location> points)
         {
             double A = 0, B = 0, C = 0, D = 0;
             int n = points.Count;
@@ -24,8 +24,9 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             }
             double k = (C * n - B * D) / (A * n - B * B);
             double b = (A * D - C * B) / (A * n - B * B);
-            Console.WriteLine("k:{0:F}, b:{1:F}", k, b);
-            return;
+            return new Plane(k, b);
         }
     }
+
+    
 }
