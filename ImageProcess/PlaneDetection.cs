@@ -15,6 +15,11 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
             int n = points.Count;
             for (int i = 0; i < n; i++)
             {
+                if (points[i].Equals(new Location(0, 0, 0)))
+                {
+                    n--;
+                    continue;
+                }
                 double x = points[i].x;
                 double y = points[i].y;
                 A += x * x;

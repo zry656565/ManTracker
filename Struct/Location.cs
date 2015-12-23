@@ -31,5 +31,13 @@ namespace SJTU.IOTLab.ManTracking.Struct
             this.offset = offset;
             this.isRelative = true;
         }
+
+        public bool Equals(Location loc)
+        {
+            if (loc.isRelative != isRelative) return false;
+            return isRelative ? 
+                depth == loc.depth && offset == loc.offset
+                : x == loc.x && y == loc.y && z == loc.z;
+        }
     }
 }

@@ -322,7 +322,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
                         for (int i = 0; i < points.Count; ++i)
                         {
                             ColorSpacePoint point = getColorPoint(points[i].depthFrameX, points[i].depthFrameY);
-                            DrawPoint(this.bitmap, point);
+                            if (point.X != Double.NegativeInfinity) DrawPoint(this.bitmap, point);
                         }
 
                         List<Location> locations = new List<Location>();
@@ -383,7 +383,7 @@ namespace SJTU.IOTLab.ManTracking.ImageProcess
 
         private void DrawPoint(WriteableBitmap bitmap, ColorSpacePoint p)
         {
-            bitmap.DrawLineAa((int)p.X - 5, (int)p.Y - 5, (int)p.X + 5, (int)p.Y + 5, Colors.Cyan, 20);
+            bitmap.DrawLineAa(Math.Max((int)p.X - 5, 0), Math.Max((int)p.Y - 5, 0), Math.Min((int)p.X + 5, colorWidth - 1), Math.Min((int)p.Y + 5, colorHeight - 1), Colors.Cyan, 20);
         }
 
         private void DrawRect(WriteableBitmap bitmap, int top, int right, int bottom, int left, int stroke = 10)
